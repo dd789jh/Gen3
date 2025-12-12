@@ -1,8 +1,76 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Star, Zap, Activity, Trophy, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WarRoom from './components/WarRoom';
 import WalletModal from './components/WalletModal';
+
+declare global {
+  interface Window {
+    Telegram?: {
+      WebApp?: {
+        ready?: () => void;
+        expand?: () => void;
+        initDataUnsafe?: {
+          start_param?: unknown;
+          user?: {
+            id?: number;
+            username?: string;
+          };
+        };
+      };
+    };
+  }
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function parseReferrerId(startParam: unknown): string | null {
+  if (typeof startParam !== 'string') return null;
+  const raw = safeDecodeURIComponent(startParam).trim();
+  if (!raw) return null;
+
+  // 期望格式：ref_邀请人ID
+  const match = /^ref_(.+)$/.exec(raw);
+  if (!match) return null;
+
+  const referrerId = match[1]?.trim();
+  if (!referrerId) return null;
+
+  // 轻量清洗：只允许常见 ID 字符，避免把奇怪内容透传到后端
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(referrerId)) return null;
+
+  return referrerId;
+}
+
+async function loginOrRegisterWithSupabase(args: {
+  telegramUserId: string;
+  referrerId: string | null;
+}) {
+  // NOTE: 这里是占位：项目当前未集成 Supabase SDK。
+  // 你后续可以在这里调用后端（Edge Function / RPC / REST）完成登录/注册。
+
+  const userId = args.telegramUserId;
+  const referrerId = args.referrerId;
+
+  // TODO: 根据后端返回判断是否是新用户
+  const isNewUser = false;
+
+  // --- 用户要求的伪代码逻辑（保留在代码里） ---
+  if (isNewUser) {
+    // 自动注册并赠送初始金币
+    // 检查是否有 referrer_id
+    if (referrerId) {
+      // TODO: 调用 Supabase RPC 函数给 referrerId 奖励
+      console.log(`User ${userId} was invited by ${referrerId}. Needs reward.`);
+    }
+  }
+}
 
 // --- 辅助函数：生成模拟波浪数据 ---
 const generateWaveData = () => {
@@ -98,6 +166,42 @@ function App() {
   const [activeMatch, setActiveMatch] = useState<Match | null>(null);
   const [showWallet, setShowWallet] = useState(false);
   const [balance, setBalance] = useState(1240);
+  const [referrerId, setReferrerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // 安全初始化 Telegram Web App（仅在 Telegram 环境下存在）
+    const tg = window.Telegram?.WebApp;
+    if (!tg) return;
+
+    try {
+      tg.ready?.();
+      tg.expand?.();
+
+      const initDataUnsafe = tg.initDataUnsafe;
+      const extractedReferrerId = parseReferrerId(initDataUnsafe?.start_param);
+
+      if (extractedReferrerId) {
+        setReferrerId(extractedReferrerId);
+        console.log('[Referral] referrer_id:', extractedReferrerId);
+      } else {
+        // 方便排查：如果你带了 start_param 但没解析出来，可以看这里
+        if (initDataUnsafe?.start_param) {
+          console.log('[Referral] start_param present but invalid:', initDataUnsafe.start_param);
+        }
+      }
+
+      // 整合登录/注册：把 referrer_id 一起透传给后端处理函数
+      const telegramUserId = initDataUnsafe?.user?.id;
+      if (telegramUserId != null) {
+        void loginOrRegisterWithSupabase({
+          telegramUserId: String(telegramUserId),
+          referrerId: extractedReferrerId,
+        });
+      }
+    } catch (err) {
+      console.warn('[Telegram] WebApp init failed:', err);
+    }
+  }, []);
 
   const toggleStar = (id: number) => {
     setMatches(prev => prev.map(m => 
