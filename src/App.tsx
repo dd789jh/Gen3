@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Star, Zap, Activity, Trophy, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { createClient } from '@supabase/supabase-js';
 import WarRoom from './components/WarRoom';
 import WalletModal from './components/WalletModal';
+import { supabase } from './supabaseClient';
 
 declare global {
   interface Window {
@@ -11,6 +11,7 @@ declare global {
       WebApp?: {
         ready?: () => void;
         expand?: () => void;
+        initData?: string;
         isVersionAtLeast?: (version: string) => boolean;
         requestInvoice?: (
           invoiceLink: string,
@@ -32,16 +33,6 @@ declare global {
     };
   }
 }
-
-const SUPABASE_URL =
-  typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_SUPABASE_URL : undefined;
-const SUPABASE_ANON_KEY =
-  typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_SUPABASE_ANON_KEY : undefined;
-
-const supabase =
-  typeof SUPABASE_URL === 'string' && SUPABASE_URL.length > 0 && typeof SUPABASE_ANON_KEY === 'string' && SUPABASE_ANON_KEY.length > 0
-    ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-    : null;
 
 function safeDecodeURIComponent(value: string): string {
   try {
@@ -217,6 +208,10 @@ function App() {
   const [balance, setBalance] = useState(1240);
   const [referrerId, setReferrerId] = useState<number | null>(null);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
+  const [authAttempt, setAuthAttempt] = useState(0);
 
   const showTelegramAlert = (message: string) => {
     const tg = window.Telegram?.WebApp;
@@ -226,6 +221,57 @@ function App() {
     }
     window.alert(message);
   };
+
+  // Telegram Mini App 自动登录（Supabase: provider=telegram）
+  useEffect(() => {
+    const tg = window.Telegram?.WebApp;
+    if (!tg) {
+      setAuthLoading(false);
+      setAuthError('Not running inside Telegram WebApp.');
+      return;
+    }
+
+    const token = typeof tg.initData === 'string' ? tg.initData : '';
+    if (!token) {
+      setAuthLoading(false);
+      setAuthError('Missing Telegram initData.');
+      return;
+    }
+
+    if (!supabase) {
+      setAuthLoading(false);
+      setAuthError('Supabase client not configured. Check VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY.');
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setAuthLoading(true);
+      setAuthError(null);
+
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'telegram',
+        token,
+      });
+
+      if (cancelled) return;
+
+      if (error) {
+        console.error('[Auth] Telegram signInWithIdToken failed:', error);
+        setAuthError(error.message);
+        setAuthLoading(false);
+        return;
+      }
+
+      const userId = data?.session?.user?.id ?? data?.user?.id ?? null;
+      setSupabaseUserId(userId);
+      setAuthLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authAttempt]);
 
   const handleVipPurchase = async () => {
     const tg = window.Telegram?.WebApp;
@@ -314,6 +360,36 @@ function App() {
   const starredMatches = matches.filter(m => m.isStarred);
   const unstarredMatches = matches.filter(m => !m.isStarred);
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background text-white flex items-center justify-center px-6">
+        <div className="text-center">
+          <div className="text-lg font-black text-neon-gold">Signing in…</div>
+          <div className="text-xs text-gray-400 mt-2">Telegram Mini App → Supabase</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!supabaseUserId) {
+    return (
+      <div className="min-h-screen bg-background text-white flex items-center justify-center px-6">
+        <div className="max-w-md w-full bg-surface/80 border border-white/10 rounded-xl p-5">
+          <div className="text-lg font-black text-neon-red mb-2">Login Failed</div>
+          <div className="text-sm text-gray-300 break-words">
+            {authError ?? 'Unknown error'}
+          </div>
+          <button
+            onClick={() => setAuthAttempt((v) => v + 1)}
+            className="w-full mt-4 py-3 bg-gradient-to-r from-neon-gold to-orange-500 text-black font-black rounded-lg"
+          >
+            Retry Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-background text-white pb-20 px-4 pt-6 max-w-md mx-auto relative font-sans"
@@ -335,9 +411,14 @@ function App() {
       </AnimatePresence>
       
       <header className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-black italic tracking-tighter text-neon-green">
-          ODDSFLOW<span className="text-white not-italic text-sm font-normal ml-1">AI</span>
-        </h1>
+        <div>
+          <h1 className="text-2xl font-black italic tracking-tighter text-neon-green">
+            ODDSFLOW<span className="text-white not-italic text-sm font-normal ml-1">AI</span>
+          </h1>
+          <div className="text-[10px] text-gray-400 font-mono mt-1">
+            Supabase ID: <span className="text-white">{supabaseUserId}</span>
+          </div>
+        </div>
         <button
           onClick={() => setShowWallet(true)}
           className="bg-surface-highlight px-3 py-1 rounded-full text-xs font-mono border border-neon-gold/30 text-neon-gold hover:border-neon-gold/50 hover:bg-surface-highlight/80 transition-all cursor-pointer"
