@@ -1,7 +1,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined;
+// IMPORTANT:
+// Use `import.meta.env.VITE_*` directly so Vite can statically replace env vars at build time.
+// Avoid `(import.meta as any).env` which can prevent replacement and break in some WebViews.
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? undefined;
+const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? undefined;
 
 export const supabase: SupabaseClient | null =
   typeof SUPABASE_URL === 'string' &&
