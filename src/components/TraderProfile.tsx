@@ -6,7 +6,7 @@ interface TraderProfileProps {
   trader: {
     id: number;
     name: string;
-    roi: string;
+    roi: string | number;
     avatar: string;
     history?: string[];
   };
@@ -65,6 +65,7 @@ export default function TraderProfile({ onClose, trader, isFollowing = false, on
     { x: 300, y: 12 },
   ];
   const polyline = chartPoints.map((p) => `${p.x},${p.y}`).join(' ');
+  const formattedRoi = typeof trader.roi === 'number' ? `+${trader.roi}%` : trader.roi;
 
   return (
     <motion.div
@@ -118,7 +119,7 @@ export default function TraderProfile({ onClose, trader, isFollowing = false, on
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-surface-highlight/60 rounded-lg p-4 border border-neon-gold/20">
               <div className="text-[11px] text-gray-400 mb-1">Total ROI</div>
-              <div className="text-xl font-black text-neon-gold font-mono">{trader.roi}</div>
+              <div className="text-xl font-black text-neon-gold font-mono">{formattedRoi}</div>
             </div>
 
             <div className="bg-surface-highlight/60 rounded-lg p-4 border border-neon-green/20">
