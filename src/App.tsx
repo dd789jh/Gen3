@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Star, Zap, Activity, Trophy, Clock, User as UserIcon } from 'lucide-react';
+import { Star, Zap, Activity, Trophy, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@supabase/supabase-js';
+import { Header } from './components/Header';
 import WarRoom from './components/WarRoom';
 import WalletModal from './components/WalletModal';
 
@@ -287,45 +288,10 @@ function App() {
         )}
       </AnimatePresence>
 
-      <header className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-2xl font-black italic tracking-tighter text-neon-green">
-            ODDSFLOW<span className="text-white not-italic text-sm font-normal ml-1">AI</span>
-          </h1>
-          {user && (
-            <div className="flex items-center gap-2 mt-1 opacity-80">
-              {user.photo_url ? (
-                <img
-                  src={user.photo_url}
-                  alt="Profile"
-                  className="w-5 h-5 rounded-full border border-white/20"
-                />
-              ) : (
-                <div className="w-5 h-5 rounded-full bg-surface-highlight flex items-center justify-center">
-                  <UserIcon size={12} className="text-gray-400" />
-                </div>
-              )}
-              <span className="text-[10px] text-gray-300 font-mono tracking-wide truncate max-w-[120px]">
-                {user.username || user.first_name || 'Agent'}
-              </span>
-              {user.is_vip && (
-                <span className="text-[8px] bg-neon-gold text-black px-1 rounded font-bold">VIP</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        <button
-          onClick={() => setShowWallet(true)}
-          className="bg-surface-highlight px-3 py-1 rounded-full text-xs font-mono border border-neon-gold/30 text-neon-gold hover:border-neon-gold/50 hover:bg-surface-highlight/80 transition-all cursor-pointer"
-        >
-          BAL: $
-          {(user?.coins ?? 0).toLocaleString('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}
-        </button>
-      </header>
+      <Header
+        balanceCoins={user?.coins ?? 0}
+        onBalanceClick={() => setShowWallet(true)}
+      />
 
       <AnimatePresence>
         {starredMatches.length > 0 && (
