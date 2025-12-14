@@ -7,6 +7,7 @@ interface TelegramUser {
   last_name?: string;
   username?: string;
   language_code?: string;
+  photo_url?: string;
 }
 
 export function Header(props: {
@@ -15,6 +16,7 @@ export function Header(props: {
   const { onBalanceClick } = props;
   const [tgUser, setTgUser] = useState<TelegramUser | null>(null);
   const [coins, setCoins] = useState<number>(0);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp as
@@ -47,7 +49,7 @@ export function Header(props: {
       // Preferred column: coins
       const resCoins = await sb
         .from('users')
-        .select('coins')
+        .select('coins,photo_url')
         .eq('telegram_id', telegramId)
         .maybeSingle();
 
@@ -56,6 +58,7 @@ export function Header(props: {
       if (!resCoins.error) {
         const next = Number((resCoins.data as any)?.coins ?? 0) || 0;
         setCoins(next);
+        setPhotoUrl(String((resCoins.data as any)?.photo_url ?? '') || null);
         return;
       }
 
@@ -63,7 +66,7 @@ export function Header(props: {
       if (String(resCoins.error.message || '').toLowerCase().includes('column') && String(resCoins.error.message || '').toLowerCase().includes('coins')) {
         const resBalance = await sb
           .from('users')
-          .select('balance')
+          .select('balance,photo_url')
           .eq('telegram_id', telegramId)
           .maybeSingle();
 
@@ -75,6 +78,7 @@ export function Header(props: {
 
         const next = Number((resBalance.data as any)?.balance ?? 0) || 0;
         setCoins(next);
+        setPhotoUrl(String((resBalance.data as any)?.photo_url ?? '') || null);
         return;
       }
 
@@ -97,6 +101,8 @@ export function Header(props: {
           const next =
             Number(payload?.new?.coins ?? payload?.new?.balance ?? 0) || 0;
           setCoins(next);
+          const nextPhoto = payload?.new?.photo_url;
+          if (typeof nextPhoto === 'string') setPhotoUrl(nextPhoto || null);
         }
       )
       .subscribe();
@@ -117,6 +123,11 @@ export function Header(props: {
     return 'Guest';
   }, [tgUser]);
 
+  const fallbackInitial = useMemo(() => {
+    const raw = displayName.replace(/^@/, '').trim();
+    return (raw[0] ?? 'G').toUpperCase();
+  }, [displayName]);
+
   return (
     <div className="flex justify-between items-center mb-8">
       {/* --- Left: Logo --- */}
@@ -130,7 +141,17 @@ export function Header(props: {
 
         {/* --- User display --- */}
         <div className="flex items-center gap-1.5 mt-1">
-          <div className="w-2 h-2 rounded-full bg-neon-green shadow-[0_0_8px_rgba(0,255,156,0.9)]"></div>
+          {photoUrl ? (
+            <img
+              src={photoUrl}
+              alt="avatar"
+              className="w-4 h-4 rounded-full border border-white/10"
+            />
+          ) : (
+            <div className="w-4 h-4 rounded-full bg-surface-highlight border border-white/10 flex items-center justify-center text-[10px] text-neon-green font-bold">
+              {fallbackInitial}
+            </div>
+          )}
           <span className="text-gray-300 text-[11px] font-medium tracking-wide">
             {displayName}
           </span>
