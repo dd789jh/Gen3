@@ -152,6 +152,7 @@ function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [matches, setMatches] = useState<Match[]>(INITIAL_MATCHES);
   const [activeMatch, setActiveMatch] = useState<Match | null>(null);
+  const [currentView, setCurrentView] = useState<'home' | 'warroom'>('home');
   const [showWallet, setShowWallet] = useState(false);
   const [referrerId, setReferrerId] = useState<number | null>(null);
   const [bannerMessage] = useState<string | null>(null);
@@ -217,9 +218,8 @@ function App() {
 
     // If VIP already active, allow entering immediately
     if (isVipActive(user.vip_end_time)) {
-      tg.showAlert?.('✅ Access Granted! Welcome to the War Room.') ??
-        showTelegramAlert('✅ Access Granted! Welcome to the War Room.');
       setActiveMatch(match);
+      setCurrentView('warroom');
       return;
     }
 
@@ -268,9 +268,8 @@ function App() {
           : prev
       );
 
-      tg.showAlert?.('✅ Access Granted! Welcome to the War Room.') ??
-        showTelegramAlert('✅ Access Granted! Welcome to the War Room.');
       setActiveMatch(match);
+      setCurrentView('warroom');
     } catch (e: any) {
       console.error('[VIP] purchase_vip error:', e);
       tg.showAlert?.(`❌ ${e?.message || 'Transaction failed'}`) ??
@@ -454,6 +453,21 @@ function App() {
     );
   }
 
+  if (currentView === 'warroom' && activeMatch) {
+    return (
+      <WarRoom
+        match={activeMatch}
+        onClose={() => {
+          setActiveMatch(null);
+          setCurrentView('home');
+        }}
+        onUpdateBalance={handleUpdateBalance}
+        onVipPurchase={handleVipPurchase}
+        isVip={isVipActive(user?.vip_end_time) || Boolean(user?.is_vip)}
+      />
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-background text-white pb-20 px-4 pt-6 max-w-md mx-auto relative font-sans"
@@ -619,7 +633,7 @@ function App() {
       </div>
 
       <AnimatePresence>
-        {activeMatch && (
+        {currentView === 'home' && activeMatch && (
           <WarRoom
             match={activeMatch}
             onClose={() => setActiveMatch(null)}
