@@ -191,35 +191,91 @@ function App() {
       }
 
       try {
-        console.log('🔍 Authenticating user:', tgUser.id);
-
-        // 1. Prepare user data updates (excluding coins/balance to prevent reset)
-        const updates = {
-          telegram_id: tgUser.id,
-          username: tgUser.username || '',
-          first_name: tgUser.first_name || '',
-          photo_url: tgUser.photo_url || '',
-          last_login_at: new Date().toISOString(),
-        };
-
-        // 2. Upsert user data
-        const { data, error } = await supabase
-          .from('users')
-          .upsert(updates, { onConflict: 'telegram_id' })
-          .select()
-          .single();
-
-        if (error) throw error;
-
-        if (data) {
-          setUser(data as UserProfile); // Supabase returns the full object including 'coins'
-          console.log('✅ User synced:', data);
+        const telegramId = tgUser.id;
+        if (typeof telegramId !== 'number' || !Number.isSafeInteger(telegramId) || telegramId <= 0) {
+          throw new Error('Missing Telegram user id (initDataUnsafe.user.id).');
         }
+        const username = tgUser.username || '';
+        const firstName = tgUser.first_name || '';
+        const photoUrl = tgUser.photo_url || '';
+
+        console.log('🔍 Syncing user:', telegramId);
+
+        // 关键逻辑：启动时确保 users 表存在该 telegram_id 记录
+        // - 不存在：insert（默认 coins/balance=0）
+        // - 存在：update username/first_name（防止改名）
+        const { data: existing, error: existingError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('telegram_id', telegramId)
+          .maybeSingle();
+
+        if (existingError) throw existingError;
+
+        if (!existing) {
+          // 优先尝试插入 coins（新 schema），如果列不存在则 fallback balance（旧 schema）
+          const tryCoins = await supabase.from('users').insert({
+            telegram_id: telegramId,
+            username,
+            first_name: firstName,
+            photo_url: photoUrl,
+            coins: 0,
+            is_vip: false,
+          });
+
+          if (tryCoins.error) {
+            const msg = String(tryCoins.error.message || '').toLowerCase();
+            const coinsColumnMissing = msg.includes('column') && msg.includes('coins');
+            const isVipColumnMissing = msg.includes('column') && msg.includes('is_vip');
+            const photoColumnMissing = msg.includes('column') && msg.includes('photo_url');
+
+            // 如果是因为列不存在导致失败，尝试最小字段 + balance
+            if (coinsColumnMissing || isVipColumnMissing || photoColumnMissing) {
+              const tryBalance = await supabase.from('users').insert({
+                telegram_id: telegramId,
+                username,
+                first_name: firstName,
+                balance: 0,
+              } as any);
+
+              if (tryBalance.error) throw tryBalance.error;
+            } else {
+              throw tryCoins.error;
+            }
+          }
+        } else {
+          // 更新改名（只更新最常见字段，避免列不存在）
+          const upd = await supabase
+            .from('users')
+            .update({ username, first_name: firstName } as any)
+            .eq('telegram_id', telegramId);
+          if (upd.error) console.warn('[Users] update username/first_name failed:', upd.error);
+        }
+
+        // 拉取最新余额（兼容 coins/balance），并映射到前端 user.coins
+        const { data: row, error: rowError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('telegram_id', telegramId)
+          .maybeSingle();
+        if (rowError) throw rowError;
+
+        const latestCoins = Number((row as any)?.coins ?? (row as any)?.balance ?? 0) || 0;
+        const latestIsVip = Boolean((row as any)?.is_vip ?? false);
+
+        setUser({
+          telegram_id: telegramId,
+          username,
+          first_name: firstName,
+          photo_url: photoUrl,
+          coins: latestCoins,
+          is_vip: latestIsVip,
+        });
 
         // 3. Handle Referral (Optional: Log only for now)
         const startParam = tg?.initDataUnsafe?.start_param;
         const extractedRefId = parseReferrerId(startParam);
-        if (extractedRefId && extractedRefId !== tgUser.id) {
+        if (extractedRefId && extractedRefId !== telegramId) {
           setReferrerId(extractedRefId);
           console.log(`🔗 Referred by: ${extractedRefId}`);
         }
@@ -244,12 +300,28 @@ function App() {
     setUser({ ...user, coins: newCoins });
 
     // 3. Sync with DB
-    const { error } = await supabase.from('users').update({ coins: newCoins }).eq('telegram_id', user.telegram_id);
+    const updCoins = await supabase
+      .from('users')
+      .update({ coins: newCoins } as any)
+      .eq('telegram_id', user.telegram_id);
 
-    if (error) {
-      console.error('Failed to update coins:', error);
-      // Optional: Revert UI if needed
+    if (!updCoins.error) return;
+
+    // fallback: balance column
+    const msg = String(updCoins.error.message || '').toLowerCase();
+    const coinsColumnMissing = msg.includes('column') && msg.includes('coins');
+    if (coinsColumnMissing) {
+      const updBal = await supabase
+        .from('users')
+        .update({ balance: newCoins } as any)
+        .eq('telegram_id', user.telegram_id);
+      if (updBal.error) {
+        console.error('Failed to update balance:', updBal.error);
+      }
+      return;
     }
+
+    console.error('Failed to update coins:', updCoins.error);
   };
 
   const toggleStar = (id: number) => {
