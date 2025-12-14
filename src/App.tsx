@@ -153,6 +153,14 @@ function App() {
   const [referrerId, setReferrerId] = useState<number | null>(null);
   const [bannerMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+
+  const pushLog = (line: string) => {
+    setDebugLog((prev) => {
+      const next = [`${new Date().toISOString()} ${line}`, ...prev];
+      return next.slice(0, 200);
+    });
+  };
 
   const showTelegramAlert = (message: string) => {
     const tg = window.Telegram?.WebApp;
@@ -186,6 +194,8 @@ function App() {
 
       if (!supabase) {
         console.error('Supabase client not initialized.');
+        pushLog(`Step 3: Supabase URL prefix: ${(SUPABASE_URL ?? '').slice(0, 10) || '[missing]'}`);
+        pushLog('Supabase client not initialized.');
         setIsLoading(false);
         return;
       }
@@ -199,7 +209,11 @@ function App() {
         const firstName = tgUser.first_name || '';
         const photoUrl = tgUser.photo_url || '';
 
-        console.log('🔍 Syncing user:', telegramId);
+        // --- DEBUG STEPS (mobile visible) ---
+        pushLog(`Step 1: Telegram.WebApp exists: ${String(Boolean(window.Telegram?.WebApp))}`);
+        pushLog(`Step 2: telegram user_id: ${telegramId}`);
+        pushLog(`Step 3: Supabase URL prefix: ${(SUPABASE_URL ?? '').slice(0, 10) || '[missing]'}`);
+        pushLog('Step 4: Starting users sync (select/insert/update)...');
 
         // 关键逻辑：启动时确保 users 表存在该 telegram_id 记录
         // - 不存在：insert（默认 coins/balance=0）
@@ -210,7 +224,11 @@ function App() {
           .eq('telegram_id', telegramId)
           .maybeSingle();
 
-        if (existingError) throw existingError;
+        if (existingError) {
+          pushLog(`Step 4: select existing ERROR: ${existingError.message}`);
+          throw existingError;
+        }
+        pushLog(`Step 4: select existing OK: ${existing ? 'FOUND' : 'NOT_FOUND'}`);
 
         if (!existing) {
           // 优先尝试插入 coins（新 schema），如果列不存在则 fallback balance（旧 schema）
@@ -224,6 +242,7 @@ function App() {
           });
 
           if (tryCoins.error) {
+            pushLog(`Step 4: insert (coins) ERROR: ${tryCoins.error.message}`);
             const msg = String(tryCoins.error.message || '').toLowerCase();
             const coinsColumnMissing = msg.includes('column') && msg.includes('coins');
             const isVipColumnMissing = msg.includes('column') && msg.includes('is_vip');
@@ -238,10 +257,16 @@ function App() {
                 balance: 0,
               } as any);
 
-              if (tryBalance.error) throw tryBalance.error;
+              if (tryBalance.error) {
+                pushLog(`Step 4: insert (balance) ERROR: ${tryBalance.error.message}`);
+                throw tryBalance.error;
+              }
+              pushLog('Step 4: insert (balance) OK');
             } else {
               throw tryCoins.error;
             }
+          } else {
+            pushLog('Step 4: insert (coins) OK');
           }
         } else {
           // 更新改名（只更新最常见字段，避免列不存在）
@@ -249,7 +274,12 @@ function App() {
             .from('users')
             .update({ username, first_name: firstName } as any)
             .eq('telegram_id', telegramId);
-          if (upd.error) console.warn('[Users] update username/first_name failed:', upd.error);
+          if (upd.error) {
+            pushLog(`Step 4: update username/first_name ERROR: ${upd.error.message}`);
+            console.warn('[Users] update username/first_name failed:', upd.error);
+          } else {
+            pushLog('Step 4: update username/first_name OK');
+          }
         }
 
         // 拉取最新余额（兼容 coins/balance），并映射到前端 user.coins
@@ -258,7 +288,11 @@ function App() {
           .select('*')
           .eq('telegram_id', telegramId)
           .maybeSingle();
-        if (rowError) throw rowError;
+        if (rowError) {
+          pushLog(`Step 4: select latest ERROR: ${rowError.message}`);
+          throw rowError;
+        }
+        pushLog('Step 4: select latest OK');
 
         const latestCoins = Number((row as any)?.coins ?? (row as any)?.balance ?? 0) || 0;
         const latestIsVip = Boolean((row as any)?.is_vip ?? false);
@@ -271,6 +305,7 @@ function App() {
           coins: latestCoins,
           is_vip: latestIsVip,
         });
+        pushLog(`Step 4: user state set OK (coins=${latestCoins}, is_vip=${String(latestIsVip)})`);
 
         // 3. Handle Referral (Optional: Log only for now)
         const startParam = tg?.initDataUnsafe?.start_param;
@@ -280,6 +315,8 @@ function App() {
           console.log(`🔗 Referred by: ${extractedRefId}`);
         }
       } catch (err) {
+        const msg = (err as any)?.message ? String((err as any).message) : String(err);
+        pushLog(`ERROR: ${msg}`);
         console.error('❌ Auth Error:', err);
       } finally {
         setIsLoading(false);
@@ -333,10 +370,34 @@ function App() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center text-neon-green gap-4">
-        <div className="animate-spin text-4xl">⚡️</div>
-        <div className="font-mono text-xs tracking-widest">CONNECTING RADAR...</div>
-      </div>
+      <>
+        {/* DEBUG CONSOLE (temporary) */}
+        <div
+          style={{
+            background: 'black',
+            color: '#00FF00',
+            padding: '10px',
+            fontSize: '12px',
+            zIndex: 9999,
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            maxHeight: '200px',
+            overflowY: 'scroll',
+          }}
+        >
+          <h3 style={{ margin: 0, marginBottom: 6 }}>DEBUG LOG:</h3>
+          {debugLog.map((log, i) => (
+            <div key={i}>{log}</div>
+          ))}
+        </div>
+
+        <div className="min-h-screen bg-background flex flex-col items-center justify-center text-neon-green gap-4 pt-[220px]">
+          <div className="animate-spin text-4xl">⚡️</div>
+          <div className="font-mono text-xs tracking-widest">CONNECTING RADAR...</div>
+        </div>
+      </>
     );
   }
 
@@ -345,6 +406,31 @@ function App() {
       className="min-h-screen bg-background text-white pb-20 px-4 pt-6 max-w-md mx-auto relative font-sans"
       data-referrer-id={referrerId ?? undefined}
     >
+      {/* DEBUG CONSOLE (temporary) */}
+      <div
+        style={{
+          background: 'black',
+          color: '#00FF00',
+          padding: '10px',
+          fontSize: '12px',
+          zIndex: 9999,
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          maxHeight: '200px',
+          overflowY: 'scroll',
+        }}
+      >
+        <h3 style={{ margin: 0, marginBottom: 6 }}>DEBUG LOG:</h3>
+        {debugLog.map((log, i) => (
+          <div key={i}>{log}</div>
+        ))}
+      </div>
+
+      {/* spacer so content is not covered by fixed debug console */}
+      <div style={{ height: 210 }} />
+
       <AnimatePresence>
         {bannerMessage && (
           <motion.div
