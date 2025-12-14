@@ -29,12 +29,14 @@ declare global {
 
 // --- Interface Definitions ---
 interface UserProfile {
+  id?: string; // UUID (used by RPC purchase_vip)
   telegram_id: number;
   username: string;
   first_name: string;
   photo_url?: string;
   coins: number; // Fixed: Matches database column 'coins'
-  is_vip: boolean;
+  is_vip: boolean; // legacy/optional (kept for backward compatibility)
+  vip_end_time?: string | null; // timestamp (ISO string) from DB
 }
 
 interface Analysis {
@@ -153,6 +155,7 @@ function App() {
   const [referrerId, setReferrerId] = useState<number | null>(null);
   const [bannerMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [vipProcessingMatchId, setVipProcessingMatchId] = useState<number | null>(null);
 
   const showTelegramAlert = (message: string) => {
     const tg = window.Telegram?.WebApp;
@@ -166,6 +169,109 @@ function App() {
   const handleVipPurchase = async () => {
     showTelegramAlert('VIP Payment integration coming soon!');
     // Implement actual payment logic here later
+  };
+
+  const isVipActive = (vipEndTime: string | null | undefined) => {
+    if (!vipEndTime) return false;
+    const t = new Date(vipEndTime).getTime();
+    if (Number.isNaN(t)) return false;
+    return t > Date.now();
+  };
+
+  const formatVipDate = (vipEndTime: string | null | undefined) => {
+    if (!vipEndTime) return '';
+    const d = new Date(vipEndTime);
+    if (Number.isNaN(d.getTime())) return '';
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const handleEnterWarRoom = async (match: Match) => {
+    if (!user || !supabase) {
+      showTelegramAlert('User not ready. Please wait and try again.');
+      return;
+    }
+
+    // 1) Check VIP status by vip_end_time
+    if (isVipActive(user.vip_end_time)) {
+      showTelegramAlert('Access Granted');
+      setActiveMatch(match);
+      return;
+    }
+
+    // 2) Non-VIP or expired: check balance (coins)
+    if (Number(user.coins) < 50) {
+      showTelegramAlert('Insufficient balance ($50 required). Please top up.');
+      return;
+    }
+
+    // 3) Process VIP purchase via RPC
+    if (!user.id) {
+      showTelegramAlert('Missing user id. Please re-open the app and try again.');
+      return;
+    }
+
+    setVipProcessingMatchId(match.id);
+    try {
+      // This is a loading hint (requested)
+      console.log('[VIP] Processing payment...');
+
+      const { data, error } = await supabase.rpc('purchase_vip', {
+        user_id_input: user.id,
+        cost_amount: 50,
+      });
+
+      if (error) {
+        console.error('[VIP] purchase_vip RPC failed:', error);
+        showTelegramAlert(error.message || 'Payment failed.');
+        return;
+      }
+
+      const success = Boolean((data as any)?.success);
+      const message = (data as any)?.message ? String((data as any).message) : '';
+
+      if (!success) {
+        showTelegramAlert(message || 'Payment failed.');
+        return;
+      }
+
+      // Refresh user row from DB (coins + vip_end_time) after purchase
+      const { data: row, error: rowError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('telegram_id', user.telegram_id)
+        .maybeSingle();
+
+      if (rowError) {
+        console.warn('[VIP] Failed to refresh user after purchase:', rowError);
+      }
+
+      const latestCoins = Number((row as any)?.coins ?? (row as any)?.balance ?? user.coins) || 0;
+      const latestVipEnd = ((row as any)?.vip_end_time ?? user.vip_end_time ?? null) as
+        | string
+        | null;
+
+      setUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              coins: latestCoins,
+              vip_end_time: latestVipEnd,
+              is_vip: true,
+            }
+          : prev
+      );
+
+      showTelegramAlert('Welcome! 30 Days Access Added.');
+      setActiveMatch(match);
+    } catch (e: any) {
+      console.error('[VIP] Unexpected error:', e);
+      showTelegramAlert(e?.message || 'Payment failed.');
+    } finally {
+      setVipProcessingMatchId(null);
+    }
   };
 
   // --- Auth & Init Logic ---
@@ -260,14 +366,17 @@ function App() {
 
         const latestCoins = Number((row as any)?.coins ?? (row as any)?.balance ?? 0) || 0;
         const latestIsVip = Boolean((row as any)?.is_vip ?? false);
+        const vipEndTime = ((row as any)?.vip_end_time ?? null) as string | null;
 
         setUser({
+          id: (row as any)?.id ? String((row as any).id) : undefined,
           telegram_id: telegramId,
           username,
           first_name: firstName,
           photo_url: photoUrl,
           coins: latestCoins,
           is_vip: latestIsVip,
+          vip_end_time: vipEndTime,
         });
 
         // 3. Handle Referral (Optional: Log only for now)
@@ -442,11 +551,19 @@ function App() {
                   </div>
 
                   <button
-                    onClick={() => setActiveMatch(match)}
+                    onClick={() => void handleEnterWarRoom(match)}
+                    disabled={vipProcessingMatchId === match.id}
                     className="w-full mt-3 py-3 bg-gradient-to-r from-neon-gold to-orange-500 text-black font-black text-sm flex items-center justify-center gap-2 hover:shadow-lg hover:shadow-neon-gold/50 transition-all active:scale-95 rounded-lg"
                   >
-                    Enter War Room <Activity size={14} />
+                    {vipProcessingMatchId === match.id ? 'Processing payment...' : 'Enter War Room'}{' '}
+                    <Activity size={14} />
                   </button>
+
+                  {user?.vip_end_time && isVipActive(user.vip_end_time) && (
+                    <div className="mt-2 text-[10px] text-gray-400 font-mono text-center">
+                      VIP Valid until: {formatVipDate(user.vip_end_time)}
+                    </div>
+                  )}
                 </motion.div>
               ))}
             </div>
@@ -501,7 +618,7 @@ function App() {
             onClose={() => setActiveMatch(null)}
             onUpdateBalance={handleUpdateBalance}
             onVipPurchase={handleVipPurchase}
-            isVip={user?.is_vip ?? false}
+            isVip={isVipActive(user?.vip_end_time) || Boolean(user?.is_vip)}
           />
         )}
       </AnimatePresence>
