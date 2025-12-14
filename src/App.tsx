@@ -205,25 +205,19 @@ function App() {
     // 2) Non-VIP or expired: always delegate balance validation to backend (RPC)
     setVipProcessingMatchId(match.id);
     try {
-      // This is a loading hint (requested)
-      console.log('[VIP] Processing payment...');
-
+      // IMPORTANT: do NOT validate balance on client; rely on RPC result.
       const { data, error } = await supabase.rpc('purchase_vip', {
-        user_telegram_id: user.id, // user.id is Telegram numeric ID
+        user_telegram_id: user.id, // Telegram numeric ID
         cost_amount: 50,
       });
 
-      if (error) {
-        console.error('[VIP] purchase_vip RPC failed:', error);
-        showTelegramAlert(error.message || 'Payment failed.');
-        return;
-      }
+      if (error) throw error;
 
       const success = Boolean((data as any)?.success);
       const message = (data as any)?.message ? String((data as any).message) : '';
 
       if (!success) {
-        showTelegramAlert(message || 'Payment failed.');
+        window.Telegram?.WebApp?.showAlert?.(message || 'Transaction failed');
         return;
       }
 
@@ -254,11 +248,12 @@ function App() {
           : prev
       );
 
-      showTelegramAlert('Welcome! 30 Days Access Added.');
+      window.Telegram?.WebApp?.showAlert?.('Welcome! 30 Days Access Added.') ??
+        showTelegramAlert('Welcome! 30 Days Access Added.');
       setActiveMatch(match);
     } catch (e: any) {
-      console.error('[VIP] Unexpected error:', e);
-      showTelegramAlert(e?.message || 'Payment failed.');
+      console.error('[VIP] purchase_vip error:', e);
+      showTelegramAlert(e?.message || 'Transaction failed');
     } finally {
       setVipProcessingMatchId(null);
     }
