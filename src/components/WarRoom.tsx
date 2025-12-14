@@ -763,9 +763,9 @@ ${icon} 𝗢𝗗𝗗𝗦𝗙𝗟𝗢𝗪 ${title}
               <div className="flex gap-2">
                 {[
                   { id: 'all', label: 'ALL' },
-                  { id: '1x2', label: '1X2' },
                   { id: 'hdp', label: 'HDP' },
                   { id: 'ou', label: 'O/U' },
+                  { id: '1x2', label: '1X2' },
                 ].map((cat) => {
                   const isActive = filterCategory === cat.id;
                   const isUnread = cat.id !== 'all' && !readCategories.has(cat.id);
