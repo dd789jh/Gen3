@@ -201,25 +201,14 @@ function App() {
       return;
     }
 
-    // 2) Non-VIP or expired: check balance (coins)
-    if (Number(user.coins) < 50) {
-      showTelegramAlert('Insufficient balance ($50 required). Please top up.');
-      return;
-    }
-
-    // 3) Process VIP purchase via RPC
-    if (!user.id) {
-      showTelegramAlert('Missing user id. Please re-open the app and try again.');
-      return;
-    }
-
+    // 2) Non-VIP or expired: always delegate balance validation to backend (RPC)
     setVipProcessingMatchId(match.id);
     try {
       // This is a loading hint (requested)
       console.log('[VIP] Processing payment...');
 
       const { data, error } = await supabase.rpc('purchase_vip', {
-        user_id_input: user.id,
+        user_telegram_id: user.telegram_id,
         cost_amount: 50,
       });
 
