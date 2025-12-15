@@ -557,7 +557,7 @@ ${icon} 𝗢𝗗𝗗𝗦𝗙𝗟𝗢𝗪 ${title}
 
             <div className="space-y-2">
               <button
-                onClick={handleGoToChannel}
+                onClick={() => window.open('https://t.me/oddsflowvip', '_blank')}
                 className="w-full py-2 bg-white/5 text-white font-bold text-sm rounded-lg border border-white/10 hover:border-neon-blue/50 hover:bg-white/10 transition-all"
               >
                 Go to Channel for Discussion
