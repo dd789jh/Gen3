@@ -258,8 +258,6 @@ export default function WarRoom({
   chatUsername = null,
   userBalance = 0,
 }: WarRoomProps) {
-  const VIP_CHANNEL_URL = 'https://t.me/your_channel';
-
   const [activeTab, setActiveTab] = useState<TabType>('signals');
   const [showBettingSlip, setShowBettingSlip] = useState(false);
   const [betAmount, setBetAmount] = useState(0);
@@ -400,13 +398,13 @@ ${icon} 𝗢𝗗𝗗𝗦𝗙𝗟𝗢𝗪 ${title}
     setToastMessage('VIP 支付功能即将上线！');
   };
 
-  const handleGoToChannel = () => {
-    try {
-      window.open(VIP_CHANNEL_URL, '_blank');
-    } catch {
-      // ignore
-    }
-  };
+  // const handleGoToChannel = () => {
+  //   try {
+  //     window.open(VIP_CHANNEL_URL, '_blank');
+  //   } catch {
+  //     // ignore
+  //   }
+  // };
 
   // --- Sniper Ticket Card ---
   const SniperTicket = ({ signal }: { signal: SignalItem }) => (
