@@ -192,6 +192,8 @@ function App() {
   };
 
   const handleEnterWarRoom = async (match: Match) => {
+    setIsLoading(true);
+
     // Safety check: must be opened in Telegram and have a valid Telegram user id
     const tg = window.Telegram?.WebApp;
     const tgUserId = tg?.initDataUnsafe?.user?.id;
@@ -207,6 +209,7 @@ function App() {
       tgUserId !== user.id
     ) {
       tg?.showAlert?.('Please open in Telegram') ?? window.alert('Please open in Telegram');
+      setIsLoading(false);
       return;
     }
 
@@ -214,69 +217,92 @@ function App() {
     if (!sb) {
       tg.showAlert?.('Supabase not ready. Please try again.') ??
         window.alert('Supabase not ready. Please try again.');
+      setIsLoading(false);
       return;
     }
 
-    // If VIP already active, allow entering immediately
-    if (isVipActive(user.vip_end_time)) {
-      setActiveMatch(match);
-      setCurrentView('warroom');
-      return;
-    }
-
-    // No client-side balance checks; rely entirely on RPC result
     setVipProcessingMatchId(match.id);
+
     try {
-      const { data, error } = await sb.rpc('purchase_vip', {
-        user_telegram_id: user.id, // Telegram numeric ID
-        cost_amount: 50,
-      });
-
-      if (error) {
-        tg.showAlert?.(`❌ ${error.message || 'Transaction failed'}`) ??
-          showTelegramAlert(`❌ ${error.message || 'Transaction failed'}`);
-        return;
-      }
-
-      if ((data as any)?.success !== true) {
-        const message = (data as any)?.message ? String((data as any).message) : 'Transaction failed';
-        tg.showAlert?.(`❌ ${message}`) ?? showTelegramAlert(`❌ ${message}`);
-        return;
-      }
-
-      // Refresh user row from DB (coins + vip_end_time) after purchase
-      const { data: row, error: rowError } = await sb
+      // Fetch latest balance and vip_end_time from DB (do not trust local state)
+      const { data: freshUser, error: freshError } = await sb
         .from('users')
-        .select('*')
+        .select('balance, vip_end_time')
         .eq('telegram_id', user.telegram_id)
-        .maybeSingle();
+        .single();
 
-      if (rowError) console.warn('[VIP] Failed to refresh user after purchase:', rowError);
+      if (freshError || !freshUser) {
+        tg.showAlert?.(`❌ ${freshError?.message || 'Failed to fetch user'}`) ??
+          showTelegramAlert(`❌ ${freshError?.message || 'Failed to fetch user'}`);
+        return;
+      }
 
-      const latestCoins = Number((row as any)?.coins ?? (row as any)?.balance ?? user.coins) || 0;
-      const latestVipEnd = ((row as any)?.vip_end_time ?? user.vip_end_time ?? null) as
-        | string
-        | null;
+      const latestBalance = Number((freshUser as any).balance ?? 0);
+      const latestVipEnd = (freshUser as any).vip_end_time as string | null | undefined;
+      const hasVip =
+        latestVipEnd && !Number.isNaN(new Date(latestVipEnd).getTime())
+          ? new Date(latestVipEnd).getTime() > Date.now()
+          : false;
 
+      if (hasVip) {
+        // Already VIP: enter directly
+        setUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                coins: latestBalance,
+                vip_end_time: latestVipEnd ?? null,
+                is_vip: true,
+              }
+            : prev
+        );
+        setActiveMatch(match);
+        setCurrentView('warroom');
+        return;
+      }
+
+      // Not VIP: check balance
+      if (latestBalance < 50) {
+        tg.showAlert?.('Insufficient balance') ?? showTelegramAlert('Insufficient balance');
+        return;
+      }
+
+      const newBalance = latestBalance - 50;
+      const newVipEnd = new Date();
+      newVipEnd.setDate(newVipEnd.getDate() + 30);
+
+      // Deduct balance and set VIP
+      const { error: updateError } = await sb
+        .from('users')
+        .update({ balance: newBalance, vip_end_time: newVipEnd.toISOString() })
+        .eq('telegram_id', user.telegram_id);
+
+      if (updateError) {
+        tg.showAlert?.(`❌ ${updateError.message || 'Transaction failed'}`) ??
+          showTelegramAlert(`❌ ${updateError.message || 'Transaction failed'}`);
+        return;
+      }
+
+      // Update local state and enter warroom
       setUser((prev) =>
         prev
           ? {
               ...prev,
-              coins: latestCoins,
-              vip_end_time: latestVipEnd,
+              coins: newBalance,
+              vip_end_time: newVipEnd.toISOString(),
               is_vip: true,
             }
           : prev
       );
-
       setActiveMatch(match);
       setCurrentView('warroom');
     } catch (e: any) {
-      console.error('[VIP] purchase_vip error:', e);
+      console.error('[VIP] enter warroom error:', e);
       tg.showAlert?.(`❌ ${e?.message || 'Transaction failed'}`) ??
         showTelegramAlert(`❌ ${e?.message || 'Transaction failed'}`);
     } finally {
       setVipProcessingMatchId(null);
+      setIsLoading(false);
     }
   };
 
