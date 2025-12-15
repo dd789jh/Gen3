@@ -986,6 +986,9 @@ ${icon} 𝗢𝗗𝗗𝗦𝗙𝗟𝗢𝗪 ${title}
               exit={{ opacity: 0, x: 20 }}
               className="space-y-3"
             >
+              <div className="flex items-center gap-2 text-neon-gold text-xs font-semibold uppercase tracking-wide">
+                <span className="text-sm">🔒 VIP Insider Access</span>
+              </div>
               <ChatRoom
                 roomId="war-room"
                 userId={chatUserId}
