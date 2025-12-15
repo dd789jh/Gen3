@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Header } from './components/Header';
 import WarRoom from './components/WarRoom';
 import WalletModal from './components/WalletModal';
+import ChatRoom from './components/ChatRoom';
 
 declare global {
   interface Window {
@@ -152,7 +153,7 @@ function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [matches, setMatches] = useState<Match[]>(INITIAL_MATCHES);
   const [activeMatch, setActiveMatch] = useState<Match | null>(null);
-  const [currentView, setCurrentView] = useState<'home' | 'warroom'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'warroom' | 'chat'>('home');
   const [showWallet, setShowWallet] = useState(false);
   const [referrerId, setReferrerId] = useState<number | null>(null);
   const [bannerMessage] = useState<string | null>(null);
@@ -468,6 +469,16 @@ function App() {
     );
   }
 
+  if (currentView === 'chat') {
+    return (
+      <ChatRoom
+        userId={user?.id ?? null}
+        username={user?.username || user?.first_name || null}
+        onBack={() => setCurrentView('home')}
+      />
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-background text-white pb-20 px-4 pt-6 max-w-md mx-auto relative font-sans"
@@ -489,6 +500,32 @@ function App() {
       </AnimatePresence>
 
       <Header onBalanceClick={() => setShowWallet(true)} />
+
+      {/* Bottom navigation: Home / Chat */}
+      <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-3 bg-surface/95 backdrop-blur-xl border-t border-white/10 z-40">
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => setCurrentView('home')}
+            className="bg-surface-highlight px-3 py-3 rounded-lg text-xs font-mono border border-white/10 text-white hover:border-neon-gold/30 transition-all"
+          >
+            HOME
+          </button>
+          <button
+            onClick={() => {
+              // Require Telegram environment + valid user
+              const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+              if (!user || typeof tgUserId !== 'number' || tgUserId !== user.id) {
+                showTelegramAlert('Please open in Telegram');
+                return;
+              }
+              setCurrentView('chat');
+            }}
+            className="bg-surface-highlight px-3 py-3 rounded-lg text-xs font-mono border border-neon-gold/30 text-neon-gold hover:border-neon-gold/50 hover:bg-surface-highlight/80 transition-all"
+          >
+            CHAT
+          </button>
+        </div>
+      </div>
 
       <AnimatePresence>
         {starredMatches.length > 0 && (
