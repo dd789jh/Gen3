@@ -90,6 +90,16 @@ const generateWaveData = () => {
   }));
 };
 
+const refreshData = (setMatchesFn: (matches: Match[]) => void) => {
+  // Simple refresh stub: regenerate mock chart data to simulate fresh odds/metrics
+  setMatchesFn(
+    INITIAL_MATCHES.map((m) => ({
+      ...m,
+      chartData: generateWaveData(),
+    }))
+  );
+};
+
 // --- Mock Data ---
 const INITIAL_MATCHES: Match[] = [
   {
@@ -548,8 +558,18 @@ function App() {
       <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-3 bg-surface/95 backdrop-blur-xl border-t border-white/10 z-40">
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={() => setCurrentView('home')}
-            className="bg-surface-highlight px-3 py-3 rounded-lg text-xs font-mono border border-white/10 text-white hover:border-neon-gold/30 transition-all"
+            onClick={() => {
+              if (currentView === 'home') {
+                refreshData(setMatches);
+              } else {
+                setCurrentView('home');
+              }
+            }}
+            className={`px-3 py-3 rounded-lg text-xs font-mono border transition-all ${
+              currentView === 'home'
+                ? 'bg-neon-gold/20 border-neon-gold/50 text-neon-gold'
+                : 'bg-surface-highlight border-white/10 text-white hover:border-neon-gold/30'
+            }`}
           >
             HOME
           </button>
